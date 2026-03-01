@@ -252,25 +252,73 @@ impl ExloliUploader {
 
     /// 从数据库中读取某个画廊的所有图片，生成一篇 telegraph 文章
     /// 为了防止画廊被删除后无法更新，此处不应该依赖 EhGallery
+    /// 当图片数量超过 MAX_IMAGES_PER_PAGE 时，会自动分页发布
     async fn publish_telegraph_article<T: GalleryInfo>(
         &self,
         gallery: &T,
     ) -> Result<telegraph_rs::Page> {
         let images = ImageEntity::get_by_gallery_id(gallery.url().id()).await?;
-
-        let mut html = String::new();
-        if gallery.cover() != 0 && gallery.cover() < images.len() {
-            html.push_str(&format!(r#"<img src="{}">"#, images[gallery.cover()].url()))
-        }
-        for img in images {
-            html.push_str(&format!(r#"<img src="{}">"#, img.url()));
-        }
-        html.push_str(&format!("<p>图片总数：{}</p>", gallery.pages()));
-
-        let node = html_to_node(&html);
-        // 文章标题优先使用日文
         let title = gallery.title_jp();
-        Ok(self.telegraph.create_page(&title, &node, false).await?)
+
+        const MAX_IMAGES_PER_PAGE: usize = 200;
+
+        if images.len() <= MAX_IMAGES_PER_PAGE {
+            // 图片数量不多，单页发布
+            let mut html = String::new();
+            if gallery.cover() != 0 && gallery.cover() < images.len() {
+                html.push_str(&format!(r#"<img src="{}">"#, images[gallery.cover()].url()))
+            }
+            for img in &images {
+                html.push_str(&format!(r#"<img src="{}">"#, img.url()));
+            }
+            html.push_str(&format!("<p>图片总数：{}</p>", gallery.pages()));
+
+            let node = html_to_node(&html);
+            Ok(self.telegraph.create_page(&title, &node, false).await?)
+        } else {
+            // 图片数量过多，分页发布
+            let chunks: Vec<&[ImageEntity]> = images.chunks(MAX_IMAGES_PER_PAGE).collect();
+            let total_parts = chunks.len();
+            let mut pages: Vec<telegraph_rs::Page> = Vec::new();
+
+            // 反向创建页面（从最后一页开始），以便在前面的页面中能链接到后面的页面
+            for (i, chunk) in chunks.iter().enumerate().rev() {
+                let part = i + 1;
+                let mut html = String::new();
+
+                // 首页添加封面
+                if i == 0 && gallery.cover() != 0 && gallery.cover() < images.len() {
+                    html.push_str(&format!(r#"<img src="{}">"#, images[gallery.cover()].url()));
+                }
+
+                // 添加本批次的图片
+                for img in *chunk {
+                    html.push_str(&format!(r#"<img src="{}">"#, img.url()));
+                }
+
+                // 页面底部添加导航信息
+                html.push_str(&format!(
+                    "<p>第 {}/{} 部分 | 图片总数：{}</p>",
+                    part, total_parts, gallery.pages()
+                ));
+
+                // 链接到下一页（如果存在）
+                if let Some(next_page) = pages.last() {
+                    html.push_str(&format!(
+                        r#"<p><a href="{}">下一部分 →</a></p>"#,
+                        next_page.url
+                    ));
+                }
+
+                let page_title = format!("{} ({}/{})", title, part, total_parts);
+                let node = html_to_node(&html);
+                let page = self.telegraph.create_page(&page_title, &node, false).await?;
+                pages.push(page);
+            }
+
+            // pages 是反向创建的，最后一个元素是第一页
+            Ok(pages.pop().unwrap())
+        }
     }
 
     /// 为画廊生成一条可供发送的 telegram 消息正文
