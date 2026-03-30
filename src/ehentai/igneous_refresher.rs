@@ -73,17 +73,20 @@ impl IgneousRefresher {
     pub async fn refresh(&self) -> Result<()> {
         info!("开始刷新 igneous");
 
-        let config = self.config.read().await;
+        let (site, base_cookie, current_igneous) = {
+            let config = self.config.read().await;
+            (
+                config.site,
+                config.base_cookie().to_string(),
+                config.igneous.clone(),
+            )
+        };
         
         // 只有里站才需要刷新 igneous
-        if config.site != Site::Exhentai {
+        if site != Site::Exhentai {
             warn!("当前站点不是里站，跳过刷新");
             return Ok(());
         }
-
-        let base_cookie = config.base_cookie();
-        let current_igneous = config.igneous.clone();
-        drop(config); // 释放读锁
 
         // 1. 如果有当前的 igneous，先测试是否有效
         if let Some(ref igneous) = current_igneous {
