@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     } else {
         if config.exhentai.site == Site::Exhentai && config.exhentai.auto_refresh_igneous {
             if config.exhentai.proxy.mode == ProxyMode::None {
-                tracing::warn!("已启用 igneous 自动刷新，但未配置代理。建议配置代理以避免被封禁。");
+                tracing::warn!("已启用 igneous 自动刷新，但未配置代理。");
             }
         }
         None
