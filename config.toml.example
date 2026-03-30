@@ -9,8 +9,19 @@ interval = "1h"
 database_url = "db.sqlite"
 
 [exhentai]
-# E 站 cookie
-cookie = "ipb_member_id=xxxxx; ..."
+# 站点选择: "ehentai" 表站 或 "exhentai" 里站
+site = "exhentai"
+# 基础 cookie (ipb_member_id 和 ipb_pass_hash)
+# 注意：这里只填写基础 cookie，不要包含 igneous
+cookie = "ipb_member_id=xxxxx; ipb_pass_hash=xxxxx"
+# igneous 值（可选，仅里站需要）
+# 如果启用自动刷新，程序会自动维护这个值
+igneous = "xxxxx"
+# 是否自动刷新 igneous（仅里站有效）
+auto_refresh_igneous = true
+# 刷新 igneous 的 cron 表达式（默认每天 0 点）
+# 格式: 分 时 日 月 星期
+refresh_cron = "0 0 * * *"
 # 搜索参数
 search_params = [
     ["f_cats", "577"],
@@ -22,6 +33,14 @@ search_count = 10
 # 翻译文件的位置，每隔半小时自动更新
 # 前往 https://github.com/EhTagTranslation/Database 下载
 trans_file = "db.text.json"
+
+[exhentai.proxy]
+# 代理模式: "none" 不代理, "half" 半代理（仅刷新 igneous 时使用）, "full" 全代理
+mode = "none"
+# 代理地址（mode 为 half 或 full 时必填）
+# 支持 http 和 socks5 协议
+# 示例: "http://127.0.0.1:7890" 或 "socks5://127.0.0.1:1080"
+url = "socks5://127.0.0.1:1080"
 
 [telegraph]
 # telegrah 账号 token

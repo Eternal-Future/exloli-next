@@ -11,6 +11,7 @@ aws-creds = { version = "0.37.0", default-features = false }
 aws-region = "0.25.5"
 chrono = "0.4.38"
 clap = { version = "4.5.13", features = ["derive"] }
+cron = "0.12.1"
 dashmap = "6.0.1"
 duration-str = { version = "0.7.1", default-features = false, features = ["serde"] }
 futures = "0.3.30"

@@ -36,9 +36,10 @@ async fn main() -> Result<()> {
         .try_init()
         .unwrap();
 
-    let ehentai = EhClient::new(&config.exhentai.cookie).await?;
+    let ehentai = EhClient::new(&config.exhentai).await?;
+    let base_url = config.exhentai.site.base_url();
     let params = [("favcat", args.favcat)];
-    let stream = ehentai.page_iter("https://exhentai.org/favorites.php", &params);
+    let stream = ehentai.page_iter(&format!("{}/favorites.php", base_url), &params);
     tokio::pin!(stream);
     while let Some(gallery) = stream.next().await {
         if glob(&format!("{}/*[[]{}]", args.download, gallery.id()))?.next().is_some() {

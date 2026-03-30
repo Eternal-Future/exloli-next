@@ -8,18 +8,23 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info, Instrument};
 
 use super::error::*;
 use super::types::*;
+use crate::config::{ExHentai, ProxyMode, Site};
 use crate::utils::html::SelectorExtend;
 
 macro_rules! headers {
-    ($($k:ident => $v:expr), *) => {{
-        [
-            $(($k.clone(), $v.parse().unwrap()),)*
-        ].into_iter().collect::<HeaderMap>()
+    ($host:expr, $($k:ident => $v:expr), *) => {{
+        let mut map = HeaderMap::new();
+        $(map.insert($k.clone(), $v.parse().unwrap());)*
+        map.insert(HOST.clone(), $host.parse().unwrap());
+        map.insert(REFERER.clone(), format!("https://{}", $host).parse().unwrap());
+        map
     }};
 }
 
@@ -36,37 +41,98 @@ macro_rules! selector {
 }
 
 #[derive(Debug, Clone)]
-pub struct EhClient(pub Client);
+pub struct EhClient {
+    client: Client,
+    site: Site,
+    cookie: Arc<RwLock<String>>,
+}
 
 impl EhClient {
-    #[tracing::instrument(skip(cookie))]
-    pub async fn new(cookie: &str) -> Result<Self> {
-        info!("登陆 E 站中");
+    #[tracing::instrument(skip(config))]
+    pub async fn new(config: &ExHentai) -> Result<Self> {
+        info!("登陆 {} 中", if config.site == Site::Exhentai { "里站" } else { "表站" });
+        
+        let cookie = config.full_cookie();
+        let site = config.site;
+        
+        let mut client_builder = Client::builder()
+            .cookie_store(true)
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(30));
+
+        // 如果是全代理模式，添加代理
+        if config.proxy.mode == ProxyMode::Full {
+            if let Some(ref proxy_url) = config.proxy.url {
+                client_builder = client_builder.proxy(reqwest::Proxy::all(proxy_url)?);
+                info!("使用代理: {}", proxy_url);
+            }
+        }
+
+        let client = client_builder.build()?;
+
+        let base_url = site.base_url();
+        
+        // 初始请求以设置必要的 cookie
         let headers = headers! {
+            site.host(),
             ACCEPT => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             ACCEPT_ENCODING => "gzip, deflate, br",
             ACCEPT_LANGUAGE => "zh-CN,en-US;q=0.7,en;q=0.3",
             CACHE_CONTROL => "max-age=0",
             CONNECTION => "keep-alive",
-            HOST => "exhentai.org",
-            REFERER => "https://exhentai.org",
             UPGRADE_INSECURE_REQUESTS => "1",
             USER_AGENT => "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0",
-            COOKIE => cookie
+            COOKIE => &cookie
         };
 
-        let client = Client::builder()
-            .cookie_store(true)
-            .default_headers(headers)
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(30))
-            .build()?;
-
         // 获取必要的 cookie
-        let _response = send!(client.get("https://exhentai.org/uconfig.php"))?;
-        let _response = send!(client.get("https://exhentai.org/mytags"))?;
+        let _response = client
+            .get(&format!("{}/uconfig.php", base_url))
+            .headers(headers.clone())
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)?;
+        
+        let _response = client
+            .get(&format!("{}/mytags", base_url))
+            .headers(headers)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)?;
 
-        Ok(Self(client))
+        Ok(Self {
+            client,
+            site,
+            cookie: Arc::new(RwLock::new(cookie)),
+        })
+    }
+
+    /// 更新 cookie（用于 igneous 刷新后更新）
+    pub async fn update_cookie(&self, new_cookie: String) {
+        let mut cookie = self.cookie.write().await;
+        *cookie = new_cookie;
+        info!("EhClient cookie 已更新");
+    }
+
+    /// 获取当前 cookie
+    async fn get_cookie(&self) -> String {
+        self.cookie.read().await.clone()
+    }
+
+    /// 获取请求头
+    async fn get_headers(&self) -> HeaderMap {
+        let cookie = self.get_cookie().await;
+        headers! {
+            self.site.host(),
+            ACCEPT => "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ACCEPT_ENCODING => "gzip, deflate, br",
+            ACCEPT_LANGUAGE => "zh-CN,en-US;q=0.7,en;q=0.3",
+            CACHE_CONTROL => "max-age=0",
+            CONNECTION => "keep-alive",
+            UPGRADE_INSECURE_REQUESTS => "1",
+            USER_AGENT => "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0",
+            COOKIE => &cookie
+        }
     }
 
     /// 访问指定页面，返回画廊列表
@@ -77,7 +143,8 @@ impl EhClient {
         params: &T,
         next: &str,
     ) -> Result<(Vec<EhGalleryUrl>, Option<String>)> {
-        let resp = send!(self.0.get(url).query(params).query(&[("next", next)]))?;
+        let headers = self.get_headers().await;
+        let resp = send!(self.client.get(url).headers(headers).query(params).query(&[("next", next)]))?;
         let html = Html::parse_document(&resp.text().await?);
 
         let selector = selector!("table.itg.gltc tr");
@@ -105,7 +172,8 @@ impl EhClient {
         &'a self,
         params: &'a T,
     ) -> impl Stream<Item = EhGalleryUrl> + 'a {
-        self.page_iter("https://exhentai.org", params)
+        let base_url = self.site.base_url();
+        self.page_iter(base_url, params)
     }
 
     /// 获取指定页面的画廊列表，返回一个异步迭代器
@@ -140,15 +208,18 @@ impl EhClient {
     pub async fn archive_gallery(&self, url: &EhGalleryUrl) -> Result<()> {
         static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"or=(?P<or>[0-9a-z-]+)").unwrap());
 
-        let resp = send!(self.0.get(url.url()))?;
+        let headers = self.get_headers().await;
+        let resp = send!(self.client.get(url.url()).headers(headers.clone()))?;
         let html = Html::parse_document(&resp.text().await?);
         let onclick = html.select_attr("p.g2 a", "onclick").unwrap();
 
         let or = RE.captures(&onclick).and_then(|c| c.name("or")).unwrap().as_str();
 
+        let base_url = self.site.base_url();
         send!(self
-            .0
-            .post("https://exhentai.org/archiver.php")
+            .client
+            .post(&format!("{}/archiver.php", base_url))
+            .headers(headers)
             .query(&[("gid", &*url.id().to_string()), ("token", url.token()), ("or", or)])
             .form(&[("hathdl_xres", "org")]))?;
 
@@ -160,7 +231,8 @@ impl EhClient {
         // NOTE: 由于 Html 是 !Send 的，为了避免它被包含在 Future 上下文中，这里将它放在一个单独的作用域内
         // 参见：https://rust-lang.github.io/async-book/07_workarounds/03_send_approximation.html
         let (title, title_jp, parent, tags, favorite, mut pages, posted, mut next_page) = {
-            let resp = send!(self.0.get(url.url()))?;
+            let headers = self.get_headers().await;
+            let resp = send!(self.client.get(url.url()).headers(headers))?;
             let html = Html::parse_document(&resp.text().await?);
 
             // 英文标题、日文标题、父画廊
@@ -200,7 +272,8 @@ impl EhClient {
 
         while let Some(next_page_url) = &next_page {
             debug!(next_page_url);
-            let resp = send!(self.0.get(next_page_url))?;
+            let headers = self.get_headers().await;
+            let resp = send!(self.client.get(next_page_url).headers(headers))?;
             let html = Html::parse_document(&resp.text().await?);
             // 每一页的 URL
             pages.extend(html.select_attrs("div#gdt a", "href"));
@@ -229,7 +302,8 @@ impl EhClient {
     /// 获取画廊的某一页的图片的 fileindex 和实际地址和 nl
     #[tracing::instrument(skip(self))]
     pub async fn get_image_url(&self, page: &EhPageUrl) -> Result<(u32, String)> {
-        let resp = send!(self.0.get(&page.url()))?;
+        let headers = self.get_headers().await;
+        let resp = send!(self.client.get(&page.url()).headers(headers.clone()))?;
         let (url, nl, fileindex) = {
             let html = Html::parse_document(&resp.text().await?);
             let url = html.select_attr("img#img", "src").unwrap();
@@ -238,10 +312,10 @@ impl EhClient {
             (url, nl, fileindex)
         };
 
-        return if send!(self.0.head(&url)).is_ok() {
+        return if send!(self.client.head(&url).headers(headers.clone())).is_ok() {
             Ok((fileindex, url))
         } else if nl.is_some() {
-            let resp = send!(self.0.get(&page.with_nl(&nl.unwrap()).url()))?;
+            let resp = send!(self.client.get(&page.with_nl(&nl.unwrap()).url()).headers(headers))?;
             let html = Html::parse_document(&resp.text().await?);
             let url = html.select_attr("img#img", "src").unwrap();
             Ok((fileindex, url))
