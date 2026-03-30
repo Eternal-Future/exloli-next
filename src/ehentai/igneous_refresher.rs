@@ -124,12 +124,13 @@ impl IgneousRefresher {
             config.igneous = Some(new_igneous.clone());
             drop(config);
 
-            // 5. 持久化到配置文件
+            // 5. 持久化到配置文件，成功后退出进程由外部管理器重启
             if let Err(e) = Config::update_igneous_in_file(&self.config_path, &new_igneous) {
                 error!("更新配置文件失败: {}", e);
                 warn!("新的 igneous 已更新到内存，但未能持久化到配置文件");
             } else {
-                info!("新的 igneous 已成功写入配置文件");
+                info!("新的 igneous 已成功写入配置文件，正在退出以重新加载配置");
+                std::process::exit(0);
             }
 
             Ok(())
