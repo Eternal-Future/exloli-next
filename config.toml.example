@@ -20,8 +20,8 @@ igneous = "xxxxx"
 # 是否自动刷新 igneous（仅里站有效）
 auto_refresh_igneous = true
 # 刷新 igneous 的 cron 表达式（默认每天 0 点）
-# 格式: 分 时 日 月 星期
-refresh_cron = "0 0 * * *"
+# 格式: 秒 分 时 日 月 星期 年
+refresh_cron = "0 0 0 * * * *"
 # 搜索参数
 search_params = [
     ["f_cats", "577"],

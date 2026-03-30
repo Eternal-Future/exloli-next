@@ -102,7 +102,7 @@ fn default_site() -> Site {
 }
 
 fn default_refresh_cron() -> String {
-    "0 0 * * *".to_string()
+    "0 0 0 * * * *".to_string()
 }
 
 fn default_proxy() -> Proxy {
