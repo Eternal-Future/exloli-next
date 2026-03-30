@@ -110,7 +110,7 @@ impl IgneousRefresher {
         }
 
         // 2. 使用基础 cookie 请求获取新的 igneous
-        let new_igneous = self.fetch_new_igneous(base_cookie).await?;
+        let new_igneous = self.fetch_new_igneous(&base_cookie).await?;
         
         // 3. 测试新的 igneous 是否有效
         let full_cookie = format!("{}; igneous={}", base_cookie, new_igneous);
