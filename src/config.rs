@@ -5,7 +5,6 @@ use duration_str::deserialize_duration;
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use teloxide::types::{ChatId, Recipient};
-
 pub static CHANNEL_ID: OnceCell<String> = OnceCell::new();
 
 #[derive(Debug, Clone, Deserialize)]
@@ -172,5 +171,17 @@ impl Config {
     pub fn new(path: &str) -> Result<Self> {
         let s = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&s)?)
+    }
+
+    /// 更新配置文件中的 igneous 值
+    pub fn update_igneous_in_file(config_path: &str, new_igneous: &str) -> Result<()> {
+        let content = std::fs::read_to_string(config_path)?;
+        
+        // 使用正则表达式替换 igneous 行
+        let re = regex::Regex::new(r#"(?m)^igneous\s*=\s*"[^"]*""#)?;
+        let new_content = re.replace(&content, format!(r#"igneous = "{}""#, new_igneous));
+        
+        std::fs::write(config_path, new_content.as_bytes())?;
+        Ok(())
     }
 }

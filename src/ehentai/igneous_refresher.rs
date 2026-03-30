@@ -9,19 +9,20 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::config::{ExHentai, ProxyMode, Site};
+use crate::config::{Config, ExHentai, ProxyMode, Site};
 
 /// Igneous 刷新器
 #[derive(Clone)]
 pub struct IgneousRefresher {
     config: Arc<RwLock<ExHentai>>,
+    config_path: String,
     schedule: Schedule,
     client: Client,
 }
 
 impl IgneousRefresher {
     /// 创建刷新器
-    pub fn new(config: ExHentai) -> Result<Self> {
+    pub fn new(config: ExHentai, config_path: &str) -> Result<Self> {
         let schedule = Schedule::from_str(&config.refresh_cron)?;
         
         // 构建用于刷新的 HTTP 客户端（可能需要代理）
@@ -41,6 +42,7 @@ impl IgneousRefresher {
 
         Ok(Self {
             config: Arc::new(RwLock::new(config)),
+            config_path: config_path.to_string(),
             schedule,
             client,
         })
@@ -116,15 +118,20 @@ impl IgneousRefresher {
         let full_cookie = format!("{}; igneous={}", base_cookie, new_igneous);
         if self.test_cookie(&full_cookie).await? {
             info!("成功获取并验证新的 igneous: {}", new_igneous);
-            
-            // 4. 更新配置中的 igneous
+
+            // 4. 更新内存中的 igneous
             let mut config = self.config.write().await;
             config.igneous = Some(new_igneous.clone());
             drop(config);
-            
-            // TODO: 这里应该持久化到配置文件，但目前先只更新内存
-            warn!("新的 igneous 已更新到内存，但未持久化到配置文件");
-            
+
+            // 5. 持久化到配置文件
+            if let Err(e) = Config::update_igneous_in_file(&self.config_path, &new_igneous) {
+                error!("更新配置文件失败: {}", e);
+                warn!("新的 igneous 已更新到内存，但未能持久化到配置文件");
+            } else {
+                info!("新的 igneous 已成功写入配置文件");
+            }
+
             Ok(())
         } else {
             error!("新获取的 igneous 验证失败");

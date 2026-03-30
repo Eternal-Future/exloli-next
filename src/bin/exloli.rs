@@ -12,7 +12,8 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = Config::new("./config.toml")?;
+    let config_path = "./config.toml";
+    let config = Config::new(config_path)?;
     CHANNEL_ID.set(config.telegram.channel_id.to_string()).unwrap();
 
     // NOTE: 全局数据库连接需要用这个变量初始化
@@ -34,12 +35,12 @@ async fn main() -> Result<()> {
         ExloliUploader::new(config.clone(), ehentai.clone(), bot.clone(), trans.clone()).await?;
 
     // 启动 igneous 刷新任务（如果需要）
-    let igneous_task = if config.exhentai.site == Site::Exhentai 
-        && config.exhentai.auto_refresh_igneous 
-        && config.exhentai.proxy.mode != ProxyMode::None 
+    let igneous_task = if config.exhentai.site == Site::Exhentai
+        && config.exhentai.auto_refresh_igneous
+        && config.exhentai.proxy.mode != ProxyMode::None
     {
         info!("启动 igneous 自动刷新任务");
-        let refresher = IgneousRefresher::new(config.exhentai.clone())?;
+        let refresher = IgneousRefresher::new(config.exhentai.clone(), config_path)?;
         let ehentai_clone = ehentai.clone();
         
         Some(tokio::spawn(async move {
