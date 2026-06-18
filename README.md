@@ -53,6 +53,7 @@ path = "/expush"
 access_token = "change-me"
 private_user_ids = [123456789]
 group_ids = [987654321]
+telegraph_proxy_host = ""
 ```
 
 - `path` 固定为 `/expush`。
@@ -60,6 +61,7 @@ group_ids = [987654321]
 - 启用 OneBot 时必须设置 `access_token`，连接时使用 `Authorization: Bearer <token>` 或 `?access_token=<token>`。
 - 私聊和群聊都强制使用白名单；对应列表为空时，不会对该类型目标推送，也不会响应交互命令。
 - QQ 私聊推送保留标签信息；QQ群推送不带标签，并会先发送本子的第一张图片作为预览图。
+- `telegraph_proxy_host` 为空时不展示代理预览；非空时会把 Telegraph 链接的 `telegra.ph` 域名替换为该域名。启用前请确保该域名是你自己维护的 Telegraph 反向代理。
 - 当前只支持两个 OneBot 交互命令：`#ping` 返回 `pong!`，`#latestbook` 返回最近一条发布结果。
 
 ## 从 exloli 迁移

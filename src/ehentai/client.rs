@@ -51,10 +51,10 @@ impl EhClient {
     #[tracing::instrument(skip(config))]
     pub async fn new(config: &ExHentai) -> Result<Self> {
         info!("登陆 {} 中", if config.site == Site::Exhentai { "里站" } else { "表站" });
-        
+
         let cookie = config.full_cookie();
         let site = config.site;
-        
+
         let mut client_builder = Client::builder()
             .cookie_store(true)
             .timeout(Duration::from_secs(30))
@@ -71,7 +71,7 @@ impl EhClient {
         let client = client_builder.build()?;
 
         let base_url = site.base_url();
-        
+
         // 初始请求以设置必要的 cookie
         let headers = headers! {
             site.host(),
@@ -92,7 +92,7 @@ impl EhClient {
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)?;
-        
+
         let _response = client
             .get(&format!("{}/mytags", base_url))
             .headers(headers)
@@ -100,11 +100,7 @@ impl EhClient {
             .await
             .and_then(reqwest::Response::error_for_status)?;
 
-        Ok(Self {
-            client,
-            site,
-            cookie: Arc::new(RwLock::new(cookie)),
-        })
+        Ok(Self { client, site, cookie: Arc::new(RwLock::new(cookie)) })
     }
 
     /// 更新 cookie（用于 igneous 刷新后更新）
@@ -144,7 +140,8 @@ impl EhClient {
         next: &str,
     ) -> Result<(Vec<EhGalleryUrl>, Option<String>)> {
         let headers = self.get_headers().await;
-        let resp = send!(self.client.get(url).headers(headers).query(params).query(&[("next", next)]))?;
+        let resp =
+            send!(self.client.get(url).headers(headers).query(params).query(&[("next", next)]))?;
         let html = Html::parse_document(&resp.text().await?);
 
         let selector = selector!("table.itg.gltc tr");

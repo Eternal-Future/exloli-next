@@ -168,6 +168,8 @@ pub struct OneBot {
     pub private_user_ids: Vec<i64>,
     #[serde(default)]
     pub group_ids: Vec<i64>,
+    #[serde(default)]
+    pub telegraph_proxy_host: String,
 }
 
 impl Default for OneBot {
@@ -180,6 +182,7 @@ impl Default for OneBot {
             access_token: String::new(),
             private_user_ids: Vec::new(),
             group_ids: Vec::new(),
+            telegraph_proxy_host: String::new(),
         }
     }
 }

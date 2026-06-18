@@ -80,6 +80,8 @@ access_token = "change-me"
 private_user_ids = []
 # 群聊白名单。为空时不会进行 QQ 群推送，也不会响应群聊 #ping/#latestbook
 group_ids = []
+# Telegraph 代理预览域名。为空时不展示“代理预览”行；启用前请确保该域名已反代 Telegraph
+telegraph_proxy_host = ""
 
 [s3]
 # s3 地区

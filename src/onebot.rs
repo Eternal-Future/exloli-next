@@ -62,8 +62,13 @@ impl OneBotHub {
         }
 
         let preview = first_image_url(gallery.url().id()).await?;
-        let private_text = render_private_message(gallery, article, &self.trans);
-        let group_text = render_group_message(gallery, article);
+        let private_text = render_private_message(
+            gallery,
+            article,
+            &self.trans,
+            &self.config.telegraph_proxy_host,
+        );
+        let group_text = render_group_message(gallery, article, &self.config.telegraph_proxy_host);
 
         for user_id in &self.config.private_user_ids {
             self.broadcast_action(
@@ -163,10 +168,15 @@ impl OneBotHub {
             .await?
             .ok_or_else(|| anyhow!("未找到 Telegraph 记录"))?;
         Ok(match target {
-            OneBotTarget::Private(_) => {
-                render_private_message(&gallery, &telegraph.url, &self.trans)
+            OneBotTarget::Private(_) => render_private_message(
+                &gallery,
+                &telegraph.url,
+                &self.trans,
+                &self.config.telegraph_proxy_host,
+            ),
+            OneBotTarget::Group(_) => {
+                render_group_message(&gallery, &telegraph.url, &self.config.telegraph_proxy_host)
             }
-            OneBotTarget::Group(_) => render_group_message(&gallery, &telegraph.url),
         })
     }
 
@@ -306,18 +316,33 @@ fn render_private_message<T: GalleryInfo>(
     gallery: &T,
     article: &str,
     trans: &EhTagTransDB,
+    telegraph_proxy_host: &str,
 ) -> String {
-    let mut text = render_tags(gallery, trans);
-    if !text.is_empty() {
-        text.push('\n');
+    let mut text = format!("📚 {}\n\n", gallery.title_jp());
+    let tags = render_tags(gallery, trans);
+    if !tags.is_empty() {
+        text.push_str(&tags);
+        text.push_str("\n\n");
     }
-    text.push_str(&format!("预览：{}\n", article));
+    text.push_str(&format!("Telegraph预览:{}\n", article));
+    if let Some(proxy) = proxy_preview_url(article, telegraph_proxy_host) {
+        text.push_str(&format!("代理预览：{}\n", proxy));
+    }
     text.push_str(&format!("原始地址：{}", gallery.url().url()));
     text
 }
 
-fn render_group_message<T: GalleryInfo>(gallery: &T, article: &str) -> String {
-    format!("📚 {}\n\n🔗 预览：{}\n🌐 原始：{}", gallery.title(), article, gallery.url().url())
+fn render_group_message<T: GalleryInfo>(
+    gallery: &T,
+    article: &str,
+    telegraph_proxy_host: &str,
+) -> String {
+    let mut text = format!("📚 {}\n\nTelegraph预览:{}\n", gallery.title_jp(), article);
+    if let Some(proxy) = proxy_preview_url(article, telegraph_proxy_host) {
+        text.push_str(&format!("代理预览：{}\n", proxy));
+    }
+    text.push_str(&format!("原始地址：{}", gallery.url().url()));
+    text
 }
 
 fn render_tags<T: GalleryInfo>(gallery: &T, trans: &EhTagTransDB) -> String {
@@ -347,4 +372,22 @@ async fn first_image_url(gallery_id: i32) -> Result<Option<String>> {
 
 fn echo(action: &str) -> String {
     format!("exloli-next-{action}-{}", chrono::Utc::now().timestamp_millis())
+}
+
+fn proxy_preview_url(article: &str, telegraph_proxy_host: &str) -> Option<String> {
+    let host = telegraph_proxy_host
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+    if host.is_empty() {
+        return None;
+    }
+
+    let mut url = reqwest::Url::parse(article).ok()?;
+    if url.host_str()? != "telegra.ph" {
+        return None;
+    }
+    url.set_host(Some(host)).ok()?;
+    Some(url.to_string())
 }
