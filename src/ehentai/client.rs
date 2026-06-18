@@ -255,7 +255,7 @@ impl EhClient {
 
             // 收藏数量
             let favorite = html.select_text("#favcount").expect("xpath fail: #favcount");
-            let favorite = favorite.split(' ').next().unwrap().parse().unwrap();
+            let favorite = parse_favorite_count(&favorite);
 
             // 发布时间
             let posted = &html.select_texts("td.gdt2")[0];
@@ -337,4 +337,22 @@ fn extract_nl(onerror: String) -> Option<String> {
     static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"nl\('(?P<nl>.+)'\)").unwrap());
     let captures = RE.captures(&onerror)?;
     Some(captures.name("nl")?.as_str().to_string())
+}
+
+fn parse_favorite_count(text: &str) -> i32 {
+    let digits = text.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+    digits.parse().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_favorite_count;
+
+    #[test]
+    fn parses_favorite_counts_without_panicking() {
+        assert_eq!(parse_favorite_count("1 times"), 1);
+        assert_eq!(parse_favorite_count("1,234 times"), 1234);
+        assert_eq!(parse_favorite_count("Never favorited"), 0);
+        assert_eq!(parse_favorite_count(""), 0);
+    }
 }

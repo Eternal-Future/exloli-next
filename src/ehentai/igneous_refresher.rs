@@ -24,7 +24,7 @@ impl IgneousRefresher {
     /// 创建刷新器
     pub fn new(config: ExHentai, config_path: &str) -> Result<Self> {
         let schedule = Schedule::from_str(&config.refresh_cron)?;
-        
+
         // 构建用于刷新的 HTTP 客户端（可能需要代理）
         let mut client_builder = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -57,9 +57,9 @@ impl IgneousRefresher {
             if let Some(next_time) = next {
                 let wait_duration = (next_time - now).to_std().unwrap_or(Duration::from_secs(60));
                 info!("下次刷新 igneous 时间: {}, 等待 {:?}", next_time, wait_duration);
-                
+
                 tokio::time::sleep(wait_duration).await;
-                
+
                 // 执行刷新
                 if let Err(e) = self.refresh().await {
                     error!("刷新 igneous 失败: {}", e);
@@ -77,13 +77,9 @@ impl IgneousRefresher {
 
         let (site, base_cookie, current_igneous) = {
             let config = self.config.read().await;
-            (
-                config.site,
-                config.base_cookie().to_string(),
-                config.igneous.clone(),
-            )
+            (config.site, config.base_cookie().to_string(), config.igneous.clone())
         };
-        
+
         // 只有里站才需要刷新 igneous
         if site != Site::Exhentai {
             warn!("当前站点不是里站，跳过刷新");
@@ -94,7 +90,7 @@ impl IgneousRefresher {
         if let Some(ref igneous) = current_igneous {
             debug!("测试当前 igneous 是否有效: {}", igneous);
             let full_cookie = format!("{}; igneous={}", base_cookie, igneous);
-            
+
             match self.test_cookie(&full_cookie).await {
                 Ok(true) => {
                     info!("当前 igneous 仍然有效，无需刷新");
@@ -113,7 +109,7 @@ impl IgneousRefresher {
 
         // 2. 使用基础 cookie 请求获取新的 igneous
         let new_igneous = self.fetch_new_igneous(&base_cookie).await?;
-        
+
         // 3. 测试新的 igneous 是否有效
         let full_cookie = format!("{}; igneous={}", base_cookie, new_igneous);
         if self.test_cookie(&full_cookie).await? {
@@ -145,12 +141,7 @@ impl IgneousRefresher {
         let mut headers = HeaderMap::new();
         headers.insert(COOKIE, HeaderValue::from_str(cookie)?);
 
-        let resp = self
-            .client
-            .get("https://exhentai.org")
-            .headers(headers)
-            .send()
-            .await?;
+        let resp = self.client.get("https://exhentai.org").headers(headers).send().await?;
 
         let status = resp.status();
         let body = resp.text().await?;
@@ -158,10 +149,9 @@ impl IgneousRefresher {
         // 如果返回的内容为空或很短（通常表站会返回很短的内容），说明 cookie 无效
         // 有效的里站页面通常会包含很多内容
         let is_valid = status.is_success() && body.len() > 1000;
-        
-        debug!("Cookie 测试结果: status={}, body_len={}, valid={}", 
-               status, body.len(), is_valid);
-        
+
+        debug!("Cookie 测试结果: status={}, body_len={}, valid={}", status, body.len(), is_valid);
+
         Ok(is_valid)
     }
 
@@ -170,20 +160,15 @@ impl IgneousRefresher {
         let mut headers = HeaderMap::new();
         headers.insert(COOKIE, HeaderValue::from_str(base_cookie)?);
 
-        let resp = self
-            .client
-            .get("https://exhentai.org")
-            .headers(headers)
-            .send()
-            .await?;
+        let resp = self.client.get("https://exhentai.org").headers(headers).send().await?;
 
         // 从 Set-Cookie 响应头中提取 igneous
         let set_cookie_headers = resp.headers().get_all(SET_COOKIE);
-        
+
         for cookie in set_cookie_headers {
             let cookie_str = cookie.to_str()?;
             debug!("收到 Set-Cookie: {}", cookie_str);
-            
+
             // 解析 igneous=xxx; ...
             if let Some(igneous_part) = cookie_str.split(';').next() {
                 if let Some((key, value)) = igneous_part.split_once('=') {

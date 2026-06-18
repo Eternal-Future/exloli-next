@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
-use tokio_tungstenite::tungstenite::http::StatusCode;
+use tokio_tungstenite::tungstenite::http::{Response as HttpResponse, StatusCode};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
@@ -234,7 +234,7 @@ fn validate_request(
     request: &Request,
     expected_path: &str,
     access_token: &str,
-) -> std::result::Result<(), Response<Option<String>>> {
+) -> std::result::Result<(), HttpResponse<Option<String>>> {
     if request.uri().path() != expected_path {
         return Err(response(StatusCode::NOT_FOUND, "invalid OneBot path"));
     }
@@ -247,8 +247,8 @@ fn validate_request(
     Err(response(StatusCode::UNAUTHORIZED, "invalid OneBot access token"))
 }
 
-fn response(status: StatusCode, body: &str) -> Response<Option<String>> {
-    Response::builder().status(status).body(Some(body.to_string())).unwrap()
+fn response(status: StatusCode, body: &str) -> HttpResponse<Option<String>> {
+    HttpResponse::builder().status(status).body(Some(body.to_string())).unwrap()
 }
 
 fn token_from_header(request: &Request) -> Option<&str> {
