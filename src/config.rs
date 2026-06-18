@@ -1,8 +1,10 @@
+use std::net::TcpListener;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use duration_str::deserialize_duration;
 use once_cell::sync::OnceCell;
+use rand::Rng;
 use serde::Deserialize;
 use teloxide::types::{ChatId, Recipient};
 pub static CHANNEL_ID: OnceCell<String> = OnceCell::new();
@@ -21,6 +23,8 @@ pub struct Config {
     pub exhentai: ExHentai,
     pub telegraph: Telegraph,
     pub telegram: Telegram,
+    #[serde(default)]
+    pub onebot: OneBot,
     pub s3: S3,
 }
 
@@ -105,10 +109,7 @@ fn default_refresh_cron() -> String {
 }
 
 fn default_proxy() -> Proxy {
-    Proxy {
-        mode: ProxyMode::None,
-        url: None,
-    }
+    Proxy { mode: ProxyMode::None, url: None }
 }
 
 impl ExHentai {
@@ -152,6 +153,46 @@ pub struct Telegram {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct OneBot {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_onebot_listen_host")]
+    pub listen_host: String,
+    #[serde(default)]
+    pub listen_port: u16,
+    #[serde(default = "default_onebot_path")]
+    pub path: String,
+    #[serde(default)]
+    pub access_token: String,
+    #[serde(default)]
+    pub private_user_ids: Vec<i64>,
+    #[serde(default)]
+    pub group_ids: Vec<i64>,
+}
+
+impl Default for OneBot {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            listen_host: default_onebot_listen_host(),
+            listen_port: 0,
+            path: default_onebot_path(),
+            access_token: String::new(),
+            private_user_ids: Vec::new(),
+            group_ids: Vec::new(),
+        }
+    }
+}
+
+fn default_onebot_listen_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_onebot_path() -> String {
+    "/expush".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct S3 {
     /// region
     pub region: String,
@@ -170,18 +211,57 @@ pub struct S3 {
 impl Config {
     pub fn new(path: &str) -> Result<Self> {
         let s = std::fs::read_to_string(path)?;
-        Ok(toml::from_str(&s)?)
+        let mut config: Config = toml::from_str(&s)?;
+        if config.onebot.enabled {
+            if config.onebot.path != "/expush" {
+                bail!("onebot.path 必须为 /expush");
+            }
+            if config.onebot.access_token.is_empty() {
+                bail!("启用 OneBot 时必须设置 onebot.access_token");
+            }
+            if config.onebot.listen_port == 0 {
+                let port = pick_onebot_port(&config.onebot.listen_host)?;
+                persist_onebot_port(path, &s, port)?;
+                config.onebot.listen_port = port;
+            }
+        }
+        Ok(config)
     }
 
     /// 更新配置文件中的 igneous 值
     pub fn update_igneous_in_file(config_path: &str, new_igneous: &str) -> Result<()> {
         let content = std::fs::read_to_string(config_path)?;
-        
+
         // 使用正则表达式替换 igneous 行
         let re = regex::Regex::new(r#"(?m)^igneous\s*=\s*"[^"]*""#)?;
         let new_content = re.replace(&content, format!(r#"igneous = "{}""#, new_igneous));
-        
+
         std::fs::write(config_path, new_content.as_bytes())?;
         Ok(())
     }
+}
+
+fn pick_onebot_port(host: &str) -> Result<u16> {
+    let mut rng = rand::thread_rng();
+    for _ in 0..512 {
+        let port = rng.gen_range(30000..=60000);
+        if TcpListener::bind((host, port)).is_ok() {
+            return Ok(port);
+        }
+    }
+    bail!("无法在 30000-60000 范围内找到可用 OneBot 端口")
+}
+
+fn persist_onebot_port(path: &str, content: &str, port: u16) -> Result<()> {
+    let listen_port_re = regex::Regex::new(r#"(?m)^listen_port\s*=\s*\d+"#)?;
+    let next = if listen_port_re.is_match(content) {
+        listen_port_re.replace(content, format!("listen_port = {port}")).to_string()
+    } else if content.contains("[onebot]") {
+        let onebot_re = regex::Regex::new(r#"(?m)^\[onebot\]\s*$"#)?;
+        onebot_re.replace(content, format!("[onebot]\nlisten_port = {port}")).to_string()
+    } else {
+        format!("{content}\n\n[onebot]\nlisten_port = {port}\n")
+    };
+    std::fs::write(path, next.as_bytes())?;
+    Ok(())
 }

@@ -64,6 +64,23 @@ bot_id ="test_bot"
 # bot token
 token = "xxxx:xxxxxxxx"
 
+[onebot]
+# OneBot 推送为可选项；false 时不会启动反向 WebSocket 服务
+enabled = false
+# OneBot/NapCat 作为 WebSocket 客户端连接：ws://<host>:<port>/expush
+# 公网传输场景可监听 0.0.0.0；启用时必须设置 access_token
+listen_host = "0.0.0.0"
+# 0 表示首次启动时在 30000-60000 随机选择未占用端口并写回配置文件
+listen_port = 0
+# 固定为 /expush，不支持其它路径
+path = "/expush"
+# OneBot 连接鉴权：Authorization: Bearer <token> 或 ?access_token=<token>
+access_token = "change-me"
+# 私聊白名单。为空时不会进行 QQ 私聊推送，也不会响应私聊 #ping/#latestbook
+private_user_ids = []
+# 群聊白名单。为空时不会进行 QQ 群推送，也不会响应群聊 #ping/#latestbook
+group_ids = []
+
 [s3]
 # s3 地区
 region = "region"

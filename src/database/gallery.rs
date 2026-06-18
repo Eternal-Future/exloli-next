@@ -160,6 +160,20 @@ impl GalleryEntity {
         .fetch_all(&*DB)
         .await
     }
+
+    /// 获取最近一条已经发布过 Telegram 消息的画廊
+    pub async fn latest_published() -> Result<Option<Self>> {
+        sqlx::query_as(
+            r#"SELECT gallery.*
+            FROM gallery
+            JOIN message ON message.gallery_id = gallery.id
+            WHERE gallery.deleted = FALSE
+            ORDER BY message.publish_date DESC, message.id DESC
+            LIMIT 1"#,
+        )
+        .fetch_optional(&*DB)
+        .await
+    }
 }
 
 impl<'q> Decode<'q, Sqlite> for TagsEntity {

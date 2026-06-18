@@ -20,6 +20,7 @@ use crate::database::{
     GalleryEntity, ImageEntity, MessageEntity, PageEntity, PollEntity, TelegraphEntity,
 };
 use crate::ehentai::{EhClient, EhGallery, EhGalleryUrl, GalleryInfo};
+use crate::onebot::OneBotHub;
 use crate::s3::S3Uploader;
 use crate::tags::EhTagTransDB;
 use crate::utils::pad_left;
@@ -31,6 +32,7 @@ pub struct ExloliUploader {
     bot: Bot,
     config: Config,
     trans: EhTagTransDB,
+    onebot: OneBotHub,
 }
 
 impl ExloliUploader {
@@ -39,13 +41,14 @@ impl ExloliUploader {
         ehentai: EhClient,
         bot: Bot,
         trans: EhTagTransDB,
+        onebot: OneBotHub,
     ) -> Result<Self> {
         let telegraph = Telegraph::new(&config.telegraph.author_name)
             .author_url(&config.telegraph.author_url)
             .access_token(&config.telegraph.access_token)
             .create()
             .await?;
-        Ok(Self { ehentai, config, telegraph, bot, trans })
+        Ok(Self { ehentai, config, telegraph, bot, trans, onebot })
     }
 
     /// 每隔 interval 分钟检查一次
@@ -114,6 +117,10 @@ impl ExloliUploader {
         MessageEntity::create(msg.id.0, gallery.url.id()).await?;
         TelegraphEntity::create(gallery.url.id(), &article.url).await?;
         GalleryEntity::create(&gallery).await?;
+
+        if let Err(err) = self.onebot.push_gallery(&gallery, &article.url).await {
+            error!("OneBot 推送失败: {}", err);
+        }
 
         Ok(())
     }
@@ -299,15 +306,14 @@ impl ExloliUploader {
                 // 页面底部添加导航信息
                 html.push_str(&format!(
                     "<p>第 {}/{} 部分 | 图片总数：{}</p>",
-                    part, total_parts, gallery.pages()
+                    part,
+                    total_parts,
+                    gallery.pages()
                 ));
 
                 // 链接到下一页（如果存在）
                 if let Some(next_page) = pages.last() {
-                    html.push_str(&format!(
-                        r#"<p><a href="{}">下一部分 →</a></p>"#,
-                        next_page.url
-                    ));
+                    html.push_str(&format!(r#"<p><a href="{}">下一部分 →</a></p>"#, next_page.url));
                 }
 
                 let page_title = format!("{} ({}/{})", title, part, total_parts);
